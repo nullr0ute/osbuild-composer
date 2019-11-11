@@ -1,4 +1,11 @@
-%global goipath         github.com/osbuild/osbuild-composer
+%global provider        github
+%global provider_tld    com
+%global project         osbuild
+%global repo            osbuild-composer
+%global provider_prefix %{provider}.%{provider_tld}/%{project}/%{repo}
+%global goipath         %{provider_prefix}
+%global commit
+%global shortcommit     %(c=%{commit}; echo ${c:0:7})
 
 Version:        5
 
@@ -19,15 +26,9 @@ License:        ASL 2.0
 URL:            %{gourl}
 Source0:        %{gosource}
 
-BuildRequires:  systemd-rpm-macros
+
+BuildRequires:  %{?go_compiler:compiler(go-compiler)}%{!?go_compiler:golang}
 BuildRequires:  systemd
-BuildRequires:  golang(github.com/aws/aws-sdk-go)
-BuildRequires:  golang-github-azure-storage-blob-devel
-BuildRequires:  golang(github.com/coreos/go-systemd/activation)
-BuildRequires:  golang(github.com/google/uuid)
-BuildRequires:  golang(github.com/julienschmidt/httprouter)
-BuildRequires:  golang(github.com/gobwas/glob)
-BuildRequires:  golang(github.com/google/go-cmp/cmp)
 
 Requires: systemd
 Requires: osbuild
@@ -38,9 +39,17 @@ Provides: osbuild-composer
 %{common_description}
 
 %prep
-%goprep
+%forgeautosetup -p1
 
 %build
+GO_BUILD_PATH=$PWD/_build
+install -m 0755 -vd $(dirname $GO_BUILD_PATH/src/%{goipath})
+ln -fs $PWD $GO_BUILD_PATH/src/%{goipath}
+cd $GO_BUILD_PATH/src/%{goipath}
+install -m 0755 -vd _bin
+export PATH=$PWD/_bin${PATH:+:$PATH}
+export GOPATH=$GO_BUILD_PATH:%{gopath}
+export GOFLAGS=-mod=vendor
 %gobuild -o _bin/osbuild-composer %{goipath}/osbuild-composer
 %gobuild -o _bin/osbuild-worker %{goipath}/osbuild-worker
 
@@ -58,7 +67,9 @@ install -m 0644 -vp distribution/osbuild-composer.conf      %{buildroot}%{_sysus
 install -m 0755 -vd                                         %{buildroot}%{_localstatedir}/cache/osbuild-composer/dnf-cache
 
 %check
-%gocheck
+export GOFLAGS=-mod=vendor
+export GOPATH=$PWD/_build:%{gopath}
+%gotest ./...
 
 %post
 %systemd_post osbuild-composer.service osbuild-composer.socket osbuild-worker@.service
